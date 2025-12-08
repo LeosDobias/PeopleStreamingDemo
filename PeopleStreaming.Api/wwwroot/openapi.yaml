@@ -1,0 +1,84 @@
+
+openapi: 3.0.1
+info:
+  title: People Streaming API
+  version: 1.0.0
+servers:
+  - url: http://localhost:5199
+    description: Local dev server (adjust port as needed)
+paths:
+  /api/people:
+    get:
+      summary: Returns people as a JSON array (materialized)
+      parameters:
+        - in: query
+          name: pattern
+          required: true
+          schema:
+            type: string
+          description: Substring that must be contained in name (case-insensitive depending on collation)
+      responses:
+        '200':
+          description: Array of Person
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Person'
+        '400':
+          description: Bad request
+  /api/people/stream:
+    get:
+      summary: Streams people as NDJSON using IAsyncEnumerable
+      parameters:
+        - in: query
+          name: pattern
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: NDJSON stream of Person
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+                description: One JSON object per line
+                example: |
+                  { "id": 1, "name": "ABCD" }
+                  { "id": 2, "name": "EFGH" }
+        '400':
+          description: Bad request
+  /api/people/stream-sync:
+    get:
+      summary: Streams people as NDJSON using IEnumerable (sync)
+      parameters:
+        - in: query
+          name: pattern
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: NDJSON stream of Person
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+                description: One JSON object per line
+        '400':
+          description: Bad request
+components:
+  schemas:
+    Person:
+      type: object
+      required: [ id, name ]
+      properties:
+        id:
+          type: integer
+          format: int32
+          example: 123
+        name:
+          type: string
+          example: "ABCD"
