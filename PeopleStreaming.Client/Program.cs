@@ -8,8 +8,11 @@ internal class Program
     {
 
         var baseUrl = "http://localhost:63685";
-        await ReadPeopleStrem(baseUrl, "/api/people/stream-async", "X");
-        await ReadPeopleStrem(baseUrl, "/api/people/stream-async-error", "AB");
+        await ReadPeopleStrem(baseUrl, "/api/people/stream-sync", "AB");
+        await ReadPeopleStrem(baseUrl, "/api/people/stream-async", "AB");
+        await ReadPeopleStrem(baseUrl, "/api/people/stream-pipewriter", "AB");
+
+        Console.ReadKey();
     }
 
     private static async Task ReadPeopleStrem(string baseUrl, string endpoint, string pattern)
@@ -28,7 +31,6 @@ internal class Program
             await using var stream = await resp.Content.ReadAsStreamAsync();
             using var reader = new StreamReader(stream);
 
-
             string? line;
 
             while ((line = await reader.ReadLineAsync()) is not null)
@@ -37,7 +39,8 @@ internal class Program
                 if (person is not null)
                 {
                     count++;
-                    Console.WriteLine($"{person.Id}: {person.Name}");
+                    if (count <= 10)
+                        Console.WriteLine($"{person.Id}: {person.Name}");
                 }
             }
         }

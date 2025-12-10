@@ -2,6 +2,8 @@ using Azure;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Mvc;
+using PeopleStreaming.Api.Endpoints;
+using PeopleStreaming.Api.Services;
 using Serilog;
 using System.Reflection;
 using System.Text;
@@ -35,8 +37,7 @@ internal class Program
             // Enable static files (to serve openapi.yaml and openapi.html)
             builder.Services.AddRouting();
 
-            // Ad-hoc reseni, Repository by mala byt injektovana sluzba!
-            Repository._cs = builder.Configuration.GetConnectionString("Default");
+            builder.Services.AddSingleton<IRepository, DbRepository>();
 
             var app = builder.Build();
 
@@ -52,97 +53,7 @@ internal class Program
 
             app.MapGet("/", () => Results.Redirect("/openapi.html"));
 
-            #region Define 'People' endpoints - right
-
-            // 1) Definuj lokální metodu/handler pro "/api/people/stream-async"
-            static async Task StreamPeopleNdjsonAsync(HttpContext ctx, [FromQuery] string pattern, CancellationToken ct)
-            {
-                if (string.IsNullOrWhiteSpace(pattern))
-                {
-                    ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
-                    await ctx.Response.WriteAsync("Query parameter 'pattern' is required.", ct);
-                    return;
-                }
-
-                ctx.Response.StatusCode = StatusCodes.Status200OK;
-                ctx.Response.ContentType = "application/x-ndjson; charset=utf-8";
-
-
-                // verze pro pro asynchronni zdroj dat IAsyncEnumerable <Preson> - doporuceno pro rest API !!!
-                await foreach (var person in Repository.StreamPeopleAsync(pattern, ct))
-                {
-                    var ndjson = Ndjson.SerializeToNdjson(person);
-                    await ctx.Response.WriteAsync(ndjson, ct);
-                }
-
-                //verze pro pro synchronni zdroj dat IEnumerale<Preson>
-                //foreach (var person in Repository.StreamPeopleSync(pattern))
-                //{
-                //    ct.ThrowIfCancellationRequested();
-                //    var ndjson = Ndjson.SerializeToNdjson(person);
-                //    await ctx.Response.WriteAsync(ndjson, ct);
-                //}
-
-
-                // žádný návrat IResult – stream už je zapsaný
-            }
-
-            // 2) namapovani handleru StreamPeopleNdjsonAsync
-            app.MapGet("/api/people/stream-async", StreamPeopleNdjsonAsync)
-               .WithName("StreamPeopleNdjsonAsync")
-               .Produces<string>(StatusCodes.Status200OK, contentType: "application/x-ndjson");
-               //.WithOpenApi();
-
-            #endregion
-
-            #region Define 'People' endpoints - wrong/broken stream
-
-            app.MapGet("/api/people/stream-async-error", async ([FromQuery] string pattern, HttpContext ctx, CancellationToken ct) =>
-            {
-
-                ctx.Response.StatusCode = StatusCodes.Status200OK;
-                ctx.Response.ContentType = "application/x-ndjson; charset=utf-8";
-
-                var connStr = ctx.RequestServices.GetRequiredService<IConfiguration>().GetConnectionString("Default")
-                             ?? throw new InvalidOperationException("Missing ConnectionStrings:Default in appsettings.json");
-
-                try
-                {
-                    await foreach (var person in Repository.StreamPeopleAsync(pattern, ct))
-                    {
-                        var ndjson = Ndjson.SerializeToNdjson(person);
-                        await ctx.Response.WriteAsync(ndjson, ct);
-                    }
-
-                    // Finish
-                    return StatusCodes.Status200OK; // nastaveni statusu po zapsani stremu zpusobi pad streamu u klienta
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "Exception during processing StreamPeopleNdjsonAsync");
-                    throw;
-                }
-
-
-            })
-            .WithName("StreamPeopleNdjsonAsyncWithError")
-            .Produces<string>(StatusCodes.Status200OK, contentType: "application/x-ndjson");
-
-            #endregion
-
-
-
-            app.MapGet("/api/people", async ([FromQuery] string pattern, HttpContext ctx, CancellationToken ct) =>
-            {
-                var people = new List<Person>(capacity: 1024);
-                await foreach (var p in Repository.StreamPeopleAsync(pattern, ct))
-                {
-                    people.Add(p);
-                }
-
-                return Results.Ok(people);
-            })
-            .WithName("GetPeopleAsArray").WithOpenApi();
+            app.MapPeopleEndpoints();
 
             // Po spuštění aplikace zaloguj adresy
             app.Lifetime.ApplicationStarted.Register(() =>
@@ -181,20 +92,22 @@ internal class Program
             Log.CloseAndFlush();
         }
     }
-
-    static class Ndjson
-    {
-        private static readonly JsonSerializerOptions Options = new()
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = false
-        };
-
-        public static string SerializeToNdjson<T>(T item)
-        {
-            var json = JsonSerializer.Serialize(item, Options);
-            return json + "\n";
-        }
-    }
 }
 public record Person(int Id, string Name);
+
+
+static class Ndjson
+{
+    private static readonly JsonSerializerOptions Options = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false
+    };
+
+    public static string SerializeToNdjson<T>(T item)
+    {
+        var json = JsonSerializer.Serialize(item, Options);
+        return json + "\n";
+    }
+
+}
